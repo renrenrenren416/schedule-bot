@@ -1,0 +1,8 @@
+node_modules/
+.env
+.env.*
+!.env.example
+src/data/schedules.json
+*.db
+credentials*.json
+token*.json
