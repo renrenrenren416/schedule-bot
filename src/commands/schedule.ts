@@ -1,61 +1,40 @@
 import type { CreateApplicationCommand } from "@discordeno/types";
 import { ApplicationCommandOptionTypes } from "@discordeno/types";
 
+const targetOption = (action: string) => ({
+    name: "target",
+    nameLocalizations: { ja: "予定" },
+    description: `${action}する予定 (予定名か日付を入力すると候補が出ます)`,
+    type: ApplicationCommandOptionTypes.String,
+    required: true,
+    autocomplete: true,
+});
+
 export const scheduleCommand: CreateApplicationCommand = {
     name: "schedule",
     description: "予定を管理します",
-
     options: [
         {
             name: "create",
             description: "予定を登録します",
             type: ApplicationCommandOptionTypes.SubCommand,
         },
-
         {
             name: "view",
-            description: "自分の予定を確認します",
+            description: "自分の予定を表示します",
             type: ApplicationCommandOptionTypes.SubCommand,
         },
-
         {
             name: "delete",
-            description: "予定を削除します",
+            description: "自分の予定を削除します",
             type: ApplicationCommandOptionTypes.SubCommand,
-            options: [
-                {
-                    name: "name",
-                    description: "削除する予定の名前",
-                    type: ApplicationCommandOptionTypes.String,
-                    required: true,
-                },
-            ],
+            options: [targetOption("削除")],
         },
-
         {
             name: "edit",
-            description: "予定を変更します",
+            description: "自分の予定を編集します",
             type: ApplicationCommandOptionTypes.SubCommand,
-            options: [
-                {
-                    name: "name",
-                    description: "変更する予定の名前",
-                    type: ApplicationCommandOptionTypes.String,
-                    required: true,
-                },
-                {
-                    name: "date",
-                    description: "新しい日付（例：2026-09-10）",
-                    type: ApplicationCommandOptionTypes.String,
-                    required: true,
-                },
-                {
-                    name: "time",
-                    description: "新しい時間（例：18:00）",
-                    type: ApplicationCommandOptionTypes.String,
-                    required: true,
-                },
-            ],
+            options: [targetOption("編集")],
         },
     ],
 };

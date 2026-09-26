@@ -1,72 +1,108 @@
-import { readFile, writeFile } from "node:fs/promises";
+// 前日 21:00 (NOTIFY_HOUR) の通知
+//
+// 1分ごとに「通知時刻を過ぎていて、まだ通知していない予定」を探して送る。
+// 特定の時刻に1回だけ動かす方式と違い、Bot が落ちていた間の通知も再起動後に送られ、
+// notified フラグで二重送信も防げる。
+//
+// - private の予定 → 本人に DM
+//   (DM を受け取れない設定のときは、内容を伏せてチャンネルでメンション)
+// - public の予定 → 作成したチャンネルでメンション
 
-export const checkSchedules = async (bot: any) => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
+import { getSchedules, type Schedule, updateSchedules } from "./store.js";
+import { addDays, formatDateLong, notifyStamp, nowLocal } from "./time.js";
 
-    const tomorrowDate = `${tomorrow.getFullYear()}-` +
-        `${String(tomorrow.getMonth() + 1).padStart(2, "0")}-` +
-        `${String(tomorrow.getDate()).padStart(2, "0")}`;
+const CHECK_INTERVAL_MS = 60 * 1000;
+/** これより古い予定はデータから消す */
+const KEEP_PAST_DAYS = 30;
 
-    console.log("明日の日付:", tomorrowDate);
+type SendOptions = { content: string; allowedMentions?: { users?: string[]; parse?: string[] } };
 
-    const schedules = JSON.parse(
-        await readFile("./src/data/schedules.json", "utf-8"),
-    );
+/** 通知に必要な Bot の機能だけを抜き出した型 */
+export interface NotifierBot {
+    helpers: {
+        getDmChannel(userId: string): Promise<{ id: bigint | string }>;
+        sendMessage(channelId: bigint | string, options: SendOptions): Promise<unknown>;
+    };
+}
 
-    const tomorrowSchedules = schedules.filter(
-        (schedule) => schedule.date === tomorrowDate,
-    );
+const reminderText = (s: Schedule) =>
+    `📅 **${s.date === nowLocal().date ? "今日" : "明日"}の予定のお知らせ**\n` +
+    `予定：${s.name}\n` +
+    `日時：${formatDateLong(s.date)} ${s.time}`;
 
-    console.log("明日の予定:", tomorrowSchedules);
+export const isDue = (s: Schedule, nowStamp: string): boolean =>
+    !s.notified &&
+    nowStamp >= notifyStamp(s.date) &&
+    `${s.date} ${s.time}` > nowStamp;
 
-    for (const schedule of tomorrowSchedules) {
-        if (schedule.notified === true) {
-            continue;
+const sendReminder = async (bot: NotifierBot, s: Schedule) => {
+    const mention = { users: [s.userId] };
+
+    if (s.visibility === "private") {
+        try {
+            const dm = await bot.helpers.getDmChannel(s.userId);
+            await bot.helpers.sendMessage(dm.id, { content: reminderText(s) });
+            return;
+        } catch (error) {
+            console.warn(`DM を送れませんでした (予定 ${s.id})`, error);
+            if (!s.channelId) return;
+            // 予定の内容は書かずに知らせる
+            await bot.helpers.sendMessage(s.channelId, {
+                content: `<@${s.userId}> 予定のリマインドを DM で送れませんでした。` +
+                    `サーバーのプライバシー設定で「ダイレクトメッセージ」を許可してください。`,
+                allowedMentions: mention,
+            });
+            return;
         }
-
-        await bot.helpers.sendMessage(schedule.channelId, {
-            content: `📅 <@${schedule.userId}>\n` +
-                `明日の予定があります！\n` +
-                `予定：${schedule.name}\n` +
-                `時間：${schedule.time}`,
-        });
-
-        schedule.notified = true;
     }
 
-    await writeFile(
-        "./src/data/schedules.json",
-        JSON.stringify(schedules, null, 2),
-    );
+    if (!s.channelId) return;
+    await bot.helpers.sendMessage(s.channelId, {
+        content: `<@${s.userId}>\n${reminderText(s)}`,
+        allowedMentions: mention,
+    });
 };
 
-export const startScheduler = (bot: any) => {
-    const scheduleNextCheck = () => {
-        const now = new Date();
+export const checkSchedules = async (bot: NotifierBot) => {
+    const now = nowLocal();
+    const due = (await getSchedules()).filter((s) => isDue(s, now.stamp));
 
-        const next = new Date(now);
-
-        next.setHours(21, 0, 0, 0);
-
-        // すでに21:00を過ぎていたら、次の日の21:00にする
-        if (next <= now) {
-            next.setDate(next.getDate() + 1);
+    for (const s of due) {
+        try {
+            await sendReminder(bot, s);
+        } catch (error) {
+            // 送れなくても通知済みにする (毎分エラーを繰り返さないため)
+            console.error(`通知の送信に失敗しました (予定 ${s.id})`, error);
         }
+        await updateSchedules((list) => {
+            const target = list.find((x) => x.id === s.id);
+            if (target) target.notified = true;
+        });
+    }
 
-        const delay = next.getTime() - now.getTime();
+    // 古い予定の掃除
+    const cutoff = addDays(now.date, -KEEP_PAST_DAYS);
+    if ((await getSchedules()).some((s) => s.date < cutoff)) {
+        await updateSchedules((list) => {
+            const keep = list.filter((s) => s.date >= cutoff);
+            list.splice(0, list.length, ...keep);
+        });
+    }
+};
 
-        console.log(`次の通知チェックまで ${delay / 1000} 秒`);
-
-        setTimeout(async () => {
-            console.log("21:00です。通知チェックを開始します！");
-
+export const startScheduler = (bot: NotifierBot) => {
+    let running = false;
+    const tick = async () => {
+        if (running) return;
+        running = true;
+        try {
             await checkSchedules(bot);
-
-            // 次の21:00を予約
-            scheduleNextCheck();
-        }, delay);
+        } catch (error) {
+            console.error("通知チェック中にエラー:", error);
+        } finally {
+            running = false;
+        }
     };
-
-    scheduleNextCheck();
+    void tick();
+    setInterval(tick, CHECK_INTERVAL_MS);
 };
