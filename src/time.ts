@@ -115,3 +115,44 @@ export const parseUserDate = (input: string, today: string): string | null => {
 /** 予定の通知時刻 ("前日 HH:00") を "YYYY-MM-DD HH:MM" で返す */
 export const notifyStamp = (date: string): string =>
     `${addDays(date, -1)} ${String(config.notifyHour).padStart(2, "0")}:00`;
+
+/** "2026-10" のような年月 */
+export const monthOf = (date: string): string => date.slice(0, 7);
+
+export const addMonths = (month: string, n: number): string => {
+    const [y, m] = month.split("-").map(Number) as [number, number];
+    const t = new Date(Date.UTC(y, m - 1 + n, 1));
+    return t.toISOString().slice(0, 7);
+};
+
+/** 月の初日と末日 */
+export const monthRange = (month: string): { from: string; to: string } => {
+    const from = `${month}-01`;
+    const to = addDays(`${addMonths(month, 1)}-01`, -1);
+    return { from, to };
+};
+
+/** "2026-10" → "2026年10月" */
+export const formatMonth = (month: string): string =>
+    `${month.slice(0, 4)}年${Number(month.slice(5, 7))}月`;
+
+const offsetFormatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: config.timeZone,
+    timeZoneName: "longOffset",
+});
+
+/** その日時点の UTC からのずれ ("+09:00" の形) */
+export const tzOffset = (date: string, time = "12:00"): string => {
+    const at = new Date(`${date}T${time}:00Z`);
+    const name = offsetFormatter.formatToParts(at).find((p) => p.type === "timeZoneName")?.value ?? "GMT";
+    const m = name.match(/GMT([+-]\d{2}):?(\d{2})?/);
+    return m ? `${m[1]}:${m[2] ?? "00"}` : "+00:00";
+};
+
+/** "YYYY-MM-DD" + "HH:MM" に分を足す (日付の繰り上がりも処理) */
+export const addMinutes = (date: string, time: string, minutes: number): { date: string; time: string } => {
+    const [y, mo, d] = date.split("-").map(Number) as [number, number, number];
+    const [h, mi] = time.split(":").map(Number) as [number, number];
+    const t = new Date(Date.UTC(y, mo - 1, d, h, mi + minutes));
+    return { date: t.toISOString().slice(0, 10), time: t.toISOString().slice(11, 16) };
+};

@@ -71,21 +71,18 @@ export const expand = (
 const byDateTime = (a: Occurrence, b: Occurrence) =>
     `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`);
 
-/**
- * これからの予定を回ごとに並べる。
- * 単発の予定はすべて、繰り返し予定は今日から days 日分を展開する。
- */
-export const upcomingOccurrences = (
+/** from〜to の間の自分の予定を回ごとに並べる (過ぎたものは除く) */
+export const occurrencesBetween = (
     list: readonly Schedule[],
     userId: string,
-    days = 14,
+    from: string,
+    to: string,
 ): Occurrence[] => {
-    const now = nowLocal();
-    const far = "9999-12-31";
+    const now = nowLocal().stamp;
     return list
         .filter((s) => s.userId === userId)
-        .flatMap((s) => expand(s, now.date, s.repeat ? addDays(now.date, days - 1) : far))
-        .filter((o) => `${o.date} ${o.time}` > now.stamp)
+        .flatMap((s) => expand(s, from, to))
+        .filter((o) => `${o.date} ${o.time}` > now)
         .sort(byDateTime);
 };
 

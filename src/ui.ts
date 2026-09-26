@@ -40,6 +40,14 @@ export const button = (
     disabled = false,
 ) => ({ type: ComponentType.Button, customId, label, style, disabled });
 
+/** URL を開くボタン */
+export const linkButton = (url: string, label: string) => ({
+    type: ComponentType.Button,
+    style: 5,
+    label,
+    url,
+});
+
 export const select = (
     customId: string,
     placeholder: string,

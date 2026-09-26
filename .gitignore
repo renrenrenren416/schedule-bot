@@ -2,7 +2,12 @@ node_modules/
 .env
 .env.*
 !.env.example
-src/data/schedules.json
+
+# 予定データと Google のトークン (個人情報・秘密情報)
+src/data/*.json
+src/data/*.tmp
+!src/data/*.example.json
+
 *.db
 credentials*.json
 token*.json

@@ -3,6 +3,7 @@
 
 import { randomUUID } from "node:crypto";
 
+import { syncSchedule } from "../google/calendar.js";
 import { markPastNotifications, weekdaysLabel } from "../recurrence.js";
 import {
     newScheduleId,
@@ -455,6 +456,7 @@ const save = async (interaction: Interaction, draft: Draft) => {
         await updateSchedules((list) => {
             list.push(schedule);
         });
+        void syncSchedule(schedule.userId, schedule.id);
         drafts.delete(draft.id);
         await interaction.edit({
             content: `✅ 予定を登録しました！\n\n${scheduleDetail(schedule)}`,
@@ -500,6 +502,7 @@ const save = async (interaction: Interaction, draft: Draft) => {
         return structuredClone(target);
     });
 
+    if (updated) void syncSchedule(updated.userId, updated.id);
     drafts.delete(draft.id);
     await interaction.edit(
         updated

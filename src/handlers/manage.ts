@@ -1,5 +1,6 @@
 // /schedule delete, /schedule edit の予定選択 (autocomplete) と削除処理
 
+import { syncSchedule } from "../google/calendar.js";
 import { expand, isActive, weekdaysLabel } from "../recurrence.js";
 import { getSchedules, type Schedule, updateSchedules, upcomingFor } from "../store.js";
 import { formatDate, nowLocal, parseUserDate } from "../time.js";
@@ -172,6 +173,7 @@ export const onDeleteButton = async (interaction: Interaction) => {
         const index = list.findIndex((s) => s.id === id && s.userId === userId);
         return index === -1 ? undefined : list.splice(index, 1)[0];
     });
+    if (removed) void syncSchedule(userId, removed.id);
 
     let content = "❌ 予定が見つかりませんでした。すでに削除されている可能性があります。";
     if (removed?.repeat) content = `🗑️ 繰り返しの予定「${removed.name}」を削除しました。`;

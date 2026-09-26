@@ -2,6 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 
+import { syncSchedule } from "../google/calendar.js";
 import { listOccurrenceDays, repeatSummary } from "../recurrence.js";
 import { getSchedules, type Schedule, shouldSkipNotification, updateSchedules } from "../store.js";
 import { formatDate, nowLocal } from "../time.js";
@@ -249,6 +250,7 @@ export const onDayPanel = async (interaction: Interaction) => {
     });
 
     dayDrafts.delete(draft.id);
+    if (result) void syncSchedule(userId, draft.scheduleId);
     if (!result) {
         await interaction.edit({ content: "❌ 予定が見つかりませんでした。", components: [] });
         return;

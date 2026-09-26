@@ -1,9 +1,10 @@
 import { InteractionTypes } from "@discordeno/types";
 
+import { onGoogleButton, onGoogleCommand } from "../handlers/google.js";
 import { onAutocomplete, onDeleteButton, onManageCommand, onPick } from "../handlers/manage.js";
 import { onDayPanel, onDaySelect, onSeriesButton } from "../handlers/occurrence.js";
 import { onCreateNameSubmit, onPanelInteraction, startCreate } from "../handlers/panel.js";
-import { onViewButton, onViewCommand } from "../handlers/view.js";
+import { onViewCommand, onViewInteraction } from "../handlers/view.js";
 import type { Interaction } from "../ui.js";
 
 const route = async (interaction: Interaction) => {
@@ -22,6 +23,7 @@ const route = async (interaction: Interaction) => {
             if (sub === "view") return onViewCommand(interaction);
             if (sub === "delete") return onManageCommand(interaction, "delete");
             if (sub === "edit") return onManageCommand(interaction, "edit");
+            if (sub === "google") return onGoogleCommand(interaction);
             return;
         }
 
@@ -34,12 +36,13 @@ const route = async (interaction: Interaction) => {
             const id = String(data?.customId ?? "");
             if (id === "create-name") return onCreateNameSubmit(interaction);
             if (id.startsWith("panel:")) return onPanelInteraction(interaction);
-            if (id.startsWith("view:")) return onViewButton(interaction);
+            if (id.startsWith("vm:")) return onViewInteraction(interaction);
             if (id.startsWith("pick:")) return onPick(interaction);
             if (id.startsWith("del:")) return onDeleteButton(interaction);
             if (id.startsWith("ser:")) return onSeriesButton(interaction);
             if (id.startsWith("day:")) return onDaySelect(interaction);
             if (id.startsWith("occ:")) return onDayPanel(interaction);
+            if (id.startsWith("g:")) return onGoogleButton(interaction);
             return;
         }
     }

@@ -36,5 +36,10 @@ export const scheduleCommand: CreateApplicationCommand = {
             type: ApplicationCommandOptionTypes.SubCommand,
             options: [targetOption("編集")],
         },
+        {
+            name: "google",
+            description: "Google カレンダーと連携します",
+            type: ApplicationCommandOptionTypes.SubCommand,
+        },
     ],
 };
