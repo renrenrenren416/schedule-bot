@@ -1,5 +1,6 @@
 // Discord のコンポーネントを組み立てる小さなヘルパー
 
+import { type Occurrence, repeatSummary, untilLabel, weekdaysLabel } from "./recurrence.js";
 import type { Schedule, Visibility } from "./store.js";
 import { formatDate, formatDateLong } from "./time.js";
 
@@ -43,12 +44,13 @@ export const select = (
     customId: string,
     placeholder: string,
     options: SelectOption[],
+    maxValues = 1,
 ) => ({
     type: ComponentType.StringSelect,
     customId,
     placeholder,
     minValues: 1,
-    maxValues: 1,
+    maxValues: Math.min(maxValues, options.length, 25),
     options: options.slice(0, 25),
 });
 
@@ -60,6 +62,7 @@ export const textInputModal = (
         placeholder?: string;
         value?: string;
         maxLength?: number;
+        required?: boolean;
     },
 ) => ({
     title,
@@ -69,7 +72,7 @@ export const textInputModal = (
             type: ComponentType.TextInput,
             customId: "value",
             style: 1,
-            required: true,
+            required: input.required ?? true,
             label: input.label,
             maxLength: input.maxLength ?? 100,
             ...(input.placeholder ? { placeholder: input.placeholder } : {}),
@@ -100,26 +103,41 @@ export const getModalValue = (
 export const visibilityLabel = (v: Visibility): string =>
     v === "private" ? "🔒 自分だけ" : "👥 みんな";
 
-export const scheduleLine = (s: Schedule, showVisibility = true): string =>
-    `• **${formatDate(s.date)} ${s.time}**　${s.name}` +
-    (showVisibility ? `　${s.visibility === "private" ? "🔒" : "👥"}` : "");
+const visIcon = (s: Schedule) => (s.visibility === "private" ? "🔒" : "👥");
 
-export const scheduleDetail = (s: Schedule): string =>
-    `予定名：${s.name}\n` +
-    `日時：${formatDateLong(s.date)} ${s.time}\n` +
-    `公開設定：${visibilityLabel(s.visibility)}`;
+/** 一覧の1行 (1回分) */
+export const occurrenceLine = (o: Occurrence, showVisibility = true): string =>
+    `• **${formatDate(o.date)} ${o.time}**　${o.schedule.name}` +
+    (o.recurring ? "　🔁" : "") +
+    (o.changed ? "(時間変更)" : "") +
+    (showVisibility ? `　${visIcon(o.schedule)}` : "");
 
-/** 予定の一覧を 2000 文字以内のテキストにする */
-export const scheduleList = (
-    header: string,
-    list: readonly Schedule[],
-    showVisibility = true,
-): string => {
+/** 繰り返しルールの1行 */
+export const repeatLine = (s: Schedule, showVisibility = true): string =>
+    `• 🔁 **${repeatSummary(s)}**　${s.name}` +
+    (s.repeat?.until ? `(${formatDate(s.repeat.until)} まで)` : "") +
+    (showVisibility ? `　${visIcon(s)}` : "");
+
+export const scheduleDetail = (s: Schedule): string => {
+    if (s.repeat) {
+        return `予定名：${s.name}\n` +
+            `繰り返し：🔁 毎週 ${weekdaysLabel(s.repeat.weekdays)}\n` +
+            `時間：${s.time}\n` +
+            `期間：${formatDateLong(s.date)} から ${untilLabel(s.repeat)}\n` +
+            `公開設定：${visibilityLabel(s.visibility)}`;
+    }
+    return `予定名：${s.name}\n` +
+        `日時：${formatDateLong(s.date)} ${s.time}\n` +
+        `公開設定：${visibilityLabel(s.visibility)}`;
+};
+
+/** 行の配列を 2000 文字以内のテキストにする */
+export const joinLines = (header: string, lines: string[]): string => {
     let text = header;
-    for (let i = 0; i < list.length; i++) {
-        const line = `\n${scheduleLine(list[i]!, showVisibility)}`;
+    for (let i = 0; i < lines.length; i++) {
+        const line = `\n${lines[i]}`;
         if (text.length + line.length > 1900) {
-            text += `\n…ほか ${list.length - i} 件`;
+            text += `\n…ほか ${lines.length - i} 件`;
             break;
         }
         text += line;
@@ -127,8 +145,10 @@ export const scheduleList = (
     return text;
 };
 
-/** 予定を選ぶセレクト用の選択肢 */
+/** 予定を選ぶセレクト / 自動補完用の選択肢 */
 export const scheduleOption = (s: Schedule): SelectOption => ({
-    label: `${formatDate(s.date)} ${s.time} ${s.name}`.slice(0, 100),
+    label: (s.repeat
+        ? `🔁 ${repeatSummary(s)} ${s.name}`
+        : `${formatDate(s.date)} ${s.time} ${s.name}`).slice(0, 100),
     value: s.id,
 });

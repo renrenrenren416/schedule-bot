@@ -1,36 +1,46 @@
 // /schedule delete, /schedule edit の予定選択 (autocomplete) と削除処理
 
+import { expand, isActive, weekdaysLabel } from "../recurrence.js";
 import { getSchedules, type Schedule, updateSchedules, upcomingFor } from "../store.js";
 import { formatDate, nowLocal, parseUserDate } from "../time.js";
-import {
-    button,
-    ButtonStyle,
-    type Interaction,
-    row,
-    scheduleDetail,
-    scheduleOption,
-    select,
-} from "../ui.js";
+import { type Interaction, row, scheduleOption, select } from "../ui.js";
+import { deleteConfirm, seriesMenu } from "./occurrence.js";
 import { startEdit } from "./panel.js";
 
 type Action = "delete" | "edit";
 
-/** 削除は過去の予定も対象、編集はこれからの予定だけ */
+/**
+ * 候補になる自分の予定。
+ * 単発: 編集はこれからの予定だけ、削除は過去の予定も対象
+ * 繰り返し: 終了日を過ぎていないもの (繰り返しが先頭)
+ */
 const candidates = async (userId: string, action: Action): Promise<Schedule[]> => {
-    const all = await getSchedules();
-    if (action === "edit") return upcomingFor(all, userId);
-    return all
-        .filter((s) => s.userId === userId)
-        .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
+    const all = (await getSchedules()).filter((s) => s.userId === userId);
+    const repeats = all
+        .filter((s) => s.repeat && (action === "delete" || isActive(s)))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    const singles = action === "edit"
+        ? upcomingFor(all, userId)
+        : all
+            .filter((s) => !s.repeat)
+            .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
+    return [...repeats, ...singles];
 };
 
-/** 予定名・日付のどちらで入力しても当たるように判定する */
+/** 予定名・日付・曜日のどれで入力しても当たるように判定する */
 export const matchesQuery = (s: Schedule, query: string, today: string): boolean => {
     const q = query.trim().toLowerCase();
     if (!q) return true;
     if (s.name.toLowerCase().includes(q)) return true;
+    const date = parseUserDate(q, today);
+
+    if (s.repeat) {
+        if (weekdaysLabel(s.repeat.weekdays).includes(q.replace(/曜日?/, ""))) return true;
+        return date !== null && expand(s, date, date).length > 0;
+    }
+
     if (formatDate(s.date).includes(q) || s.date.includes(q)) return true;
-    if (parseUserDate(q, today) === s.date) return true;
+    if (date === s.date) return true;
     const digits = q.replace(/\D/g, "");
     return digits.length >= 3 && s.date.replace(/-/g, "").includes(digits);
 };
@@ -61,6 +71,27 @@ export const onAutocomplete = async (interaction: Interaction) => {
 // ---------------------------------------------------------------
 // コマンド実行時: 入力値から予定を特定する
 // ---------------------------------------------------------------
+
+/** 1件に決まった予定について、次の画面を出す */
+const proceed = async (
+    interaction: Interaction,
+    schedule: Schedule,
+    action: Action,
+    replace: boolean,
+) => {
+    if (schedule.repeat) {
+        const menu = seriesMenu(schedule, action);
+        if (replace) await interaction.edit(menu);
+        else await interaction.respond(menu, { isPrivate: true });
+        return;
+    }
+    if (action === "edit") {
+        await startEdit(interaction, schedule, replace);
+        return;
+    }
+    if (replace) await interaction.edit(deleteConfirm(schedule));
+    else await interaction.respond(deleteConfirm(schedule), { isPrivate: true });
+};
 
 export const onManageCommand = async (interaction: Interaction, action: Action) => {
     const sub = interaction.data.options[0];
@@ -93,8 +124,7 @@ export const onManageCommand = async (interaction: Interaction, action: Action) 
     }
 
     if (matches.length === 1) {
-        if (action === "edit") await startEdit(interaction, matches[0]!, false);
-        else await interaction.respond(deleteConfirm(matches[0]!), { isPrivate: true });
+        await proceed(interaction, matches[0]!, action, false);
         return;
     }
 
@@ -122,23 +152,12 @@ export const onPick = async (interaction: Interaction) => {
         await interaction.edit({ content: "❌ 予定が見つかりませんでした。", components: [] });
         return;
     }
-    if (action === "edit") await startEdit(interaction, schedule, true);
-    else await interaction.edit(deleteConfirm(schedule));
+    await proceed(interaction, schedule, action, true);
 };
 
 // ---------------------------------------------------------------
 // 削除
 // ---------------------------------------------------------------
-
-const deleteConfirm = (s: Schedule) => ({
-    content: `🗑️ **この予定を削除しますか？**\n\n${scheduleDetail(s)}`,
-    components: [
-        row(
-            button(`del:${s.id}:yes`, "削除する", ButtonStyle.Danger),
-            button(`del:${s.id}:no`, "やめる"),
-        ),
-    ],
-});
 
 export const onDeleteButton = async (interaction: Interaction) => {
     const [, id, answer] = String(interaction.data.customId).split(":");
@@ -154,10 +173,10 @@ export const onDeleteButton = async (interaction: Interaction) => {
         return index === -1 ? undefined : list.splice(index, 1)[0];
     });
 
-    await interaction.edit({
-        content: removed
-            ? `🗑️ 「${removed.name}」(${formatDate(removed.date)} ${removed.time}) を削除しました。`
-            : "❌ 予定が見つかりませんでした。すでに削除されている可能性があります。",
-        components: [],
-    });
+    let content = "❌ 予定が見つかりませんでした。すでに削除されている可能性があります。";
+    if (removed?.repeat) content = `🗑️ 繰り返しの予定「${removed.name}」を削除しました。`;
+    else if (removed) {
+        content = `🗑️ 「${removed.name}」(${formatDate(removed.date)} ${removed.time}) を削除しました。`;
+    }
+    await interaction.edit({ content, components: [] });
 };
